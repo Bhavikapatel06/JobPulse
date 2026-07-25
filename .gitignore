@@ -1,8 +1,19 @@
 # Dependencies
 **/node_modules/
 
+# Python Virtual Environments & Caches
+**/venv/
+**/env/
+**/ENV/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
 # Environment secrets
 **/.env
+.env.local
 
 # Logs
 **/logs/

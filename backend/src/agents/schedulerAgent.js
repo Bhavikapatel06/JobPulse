@@ -25,6 +25,8 @@ const { getCurrentHHMM } = require('../utils/timeUtils');
 const companyDataCheckerAgent = require('./companyDataCheckerAgent');
 const jobFilteringAgent = require('./jobFilteringAgent');
 const reportGenerationAgent = require('./reportGenerationAgent');
+const agnoClient = require('../services/agnoClient');
+const notificationService = require('../notifications/notificationService');
 const logger = require('../config/logger');
 
 const REFRESH_INTERVAL_MINUTES = parseInt(process.env.REFRESH_INTERVAL_MINUTES || '60', 10);
@@ -159,8 +161,24 @@ const processUser = async (user) => {
     }
   }
 
-  // Generate personalized report — 0 AI tokens, pure DB read
-  await reportGenerationAgent.generate(user, allFilteredJobs);
+  // ── Try Agno ReportAgent first; fall back to JS generator ───
+  const agnoReport = await agnoClient.generateReport(user, allFilteredJobs);
+
+  if (agnoReport) {
+    // Print the Agno-generated Markdown report to terminal
+    const divider = '─'.repeat(60);
+    logger.info(
+      `\n${divider}\n` +
+      `[Agno ReportAgent] Report for ${user.name}:\n` +
+      `${divider}\n${agnoReport}\n${divider}`
+    );
+    // Dispatch notifications using structured data from JS helper
+    const reportData = reportGenerationAgent.generateReportData(user, allFilteredJobs);
+    await notificationService.dispatch(user, reportData);
+  } else {
+    // Agno unavailable → use existing ANSI terminal report generator
+    await reportGenerationAgent.generate(user, allFilteredJobs);
+  }
 };
 
 // ─────────────────────────────────────────────────────────────

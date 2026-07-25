@@ -81,28 +81,70 @@ const fetchUrlFromAI = async (company) => {
 };
 
 /**
- * Get the official careers page URL for a company.
- * Reads from DB cache first; falls back to AI only when necessary.
- *
- * @param {string} company  – Company display name e.g. "Google"
- * @returns {Promise<string>} Verified careers page URL
+ * Probes common ATS platforms directly for a company slug.
+ * e.g. "PhonePe" -> https://boards.greenhouse.io/phonepe
+ * @param {string} company
+ * @returns {Promise<string|null>}
  */
-const findCareersUrl = async (company) => {
-  const key = company.trim().toLowerCase();
+const probeAtsEndpoints = async (company) => {
+  const slug = company.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!slug || slug.length < 2) return null;
 
-  // ── 1. Check MongoDB cache ───────────────────────────────
-  const existing = await CompanyJob.findOne({ company: key }).select('careersUrl');
-  if (existing?.careersUrl) {
-    const reachable = await isReachable(existing.careersUrl);
-    if (reachable) {
-      logger.info(`[SearchAgent] Reusing cached URL for "${company}": ${existing.careersUrl}`);
-      return existing.careersUrl;
+  const candidates = [
+    `https://boards.greenhouse.io/${slug}`,
+    `https://jobs.lever.co/${slug}`,
+    `https://jobs.ashbyhq.com/${slug}`,
+  ];
+
+  for (const candidate of candidates) {
+    if (await isReachable(candidate)) {
+      logger.info(`[SearchAgent] 🎯 Direct ATS URL discovered via probing: ${candidate}`);
+      return candidate;
     }
-    logger.warn(`[SearchAgent] Cached URL for "${company}" is no longer reachable. Refreshing via AI...`);
   }
 
-  // ── 2. Call AI to discover URL ───────────────────────────
-  logger.info(`[SearchAgent] No valid cached URL. Calling AI for: ${company}`);
+  return null;
+};
+
+/**
+ * Get the official careers page URL for a company.
+ * Reads from DB cache first; falls back to ATS probe and AI when necessary.
+ *
+ * @param {string}  company      – Company display name e.g. "Google"
+ * @param {boolean} forceRefresh – If true, ignores cached URL and re-discovers
+ * @returns {Promise<string>} Verified careers page URL
+ */
+const findCareersUrl = async (company, forceRefresh = false) => {
+  const key = company.trim().toLowerCase();
+
+  // ── 1. Check MongoDB cache (unless forceRefresh is true) ───
+  if (!forceRefresh) {
+    const existing = await CompanyJob.findOne({ company: key }).select('careersUrl');
+    if (existing?.careersUrl) {
+      const reachable = await isReachable(existing.careersUrl);
+      if (reachable) {
+        logger.info(`[SearchAgent] Reusing cached URL for "${company}": ${existing.careersUrl}`);
+        return existing.careersUrl;
+      }
+      logger.warn(`[SearchAgent] Cached URL for "${company}" is no longer reachable. Refreshing...`);
+    }
+  } else {
+    logger.info(`[SearchAgent] Force refresh active for "${company}". Re-discovering careers URL...`);
+  }
+
+  // ── 2. Direct ATS Probing (Fastest & most reliable) ───────
+  const atsUrl = await probeAtsEndpoints(company);
+  if (atsUrl) {
+    await CompanyJob.findOneAndUpdate(
+      { company: key },
+      { $set: { careersUrl: atsUrl, companyDisplayName: company } },
+      { upsert: true, new: true }
+    );
+    return atsUrl;
+  }
+
+  // ── 3. Call AI to discover URL ───────────────────────────
+  logger.info(`[SearchAgent] Direct ATS probe returned no match. Calling AI for: ${company}`);
   const url = await fetchUrlFromAI(company);
 
   if (!url) {
@@ -111,7 +153,7 @@ const findCareersUrl = async (company) => {
 
   logger.info(`[SearchAgent] LLM suggested URL: ${url}`);
 
-  // ── 3. Validate reachability ─────────────────────────────
+  // ── 4. Validate reachability ─────────────────────────────
   let finalUrl = url;
   const reachable = await isReachable(url);
 
@@ -137,7 +179,7 @@ const findCareersUrl = async (company) => {
     }
   }
 
-  // ── 4. Persist URL to DB cache ───────────────────────────
+  // ── 5. Persist URL to DB cache ───────────────────────────
   await CompanyJob.findOneAndUpdate(
     { company: key },
     { $set: { careersUrl: finalUrl, companyDisplayName: company } },

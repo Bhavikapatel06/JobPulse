@@ -106,14 +106,16 @@ function checkEnv() {
   const name   = await ask(`  ${bold('Your Name')}          : `) || 'JobPulse User';
   const email  = await ask(`  ${bold('Your Email')}         : `) || `user_${Date.now()}@example.com`;
 
-  console.log('');
-  const DEFAULT_COMPANIES = ['Google', 'Microsoft', 'Amazon', 'Meta', 'Apple', 'NVIDIA', 'Adobe', 'Oracle'];
-  const companiesRaw = await ask(
-    `  ${bold('Company Name(s)')}    : ${dim('(optional – press Enter to search ALL top tech companies: Google, Microsoft, Amazon...)')} \n  → `
-  );
-  const companies = companiesRaw.trim()
-    ? companiesRaw.split(',').map((c) => c.trim()).filter(Boolean)
-    : DEFAULT_COMPANIES;
+  let companiesInput = '';
+  while (!companiesInput.trim()) {
+    companiesInput = await ask(
+      `  ${bold('Company Name(s)')}    : ${dim('(COMPULSORY – comma-separated, e.g. Google, Microsoft, Amazon)')} \n  → `
+    );
+    if (!companiesInput.trim()) {
+      console.log(yellow('  ⚠️   Company Name is compulsory! Please enter at least one company name.\n'));
+    }
+  }
+  const companies = companiesInput.split(',').map((c) => c.trim()).filter(Boolean);
 
   const desiredRole = await ask(
     `\n  ${bold('Desired Job Role')}   : ${dim('(e.g. Software Engineer, Backend Developer)')} \n  → `
