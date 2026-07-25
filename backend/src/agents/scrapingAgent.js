@@ -20,6 +20,7 @@ const aiService = require('../services/aiService');
 const { safeJsonParse } = require('../utils/textUtils');
 const { sha256, deduplicateChunks } = require('../utils/hashUtils');
 const logger = require('../config/logger');
+const { parseJobs } = require('../parsers');
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
@@ -429,13 +430,51 @@ const fetchMicrosoftApiJobs = async () => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────
-//  Main Entry Point
-// ─────────────────────────────────────────────────────────────
+/**
+ * Direct REST API fetcher for Amazon Jobs (0 AI tokens, 0.4s runtime).
+ */
+const fetchAmazonApiJobs = async () => {
+  try {
+    const res = await axios.get(
+      'https://www.amazon.jobs/en/search.json?result_limit=50',
+      {
+        headers: { 'User-Agent': USER_AGENT },
+        timeout: 15000,
+      }
+    );
+    const jobsList = res.data?.jobs || [];
+    if (!Array.isArray(jobsList) || jobsList.length === 0) return [];
+
+    const jobs = jobsList.map((j) => {
+      const title = (j.title || 'Software Engineer').trim();
+      const jobId = String(j.id_icims || j.id || Math.random());
+      const location = j.location || j.city || 'Not specified';
+      const applyLink = j.job_path ? `https://www.amazon.jobs${j.job_path}` : `https://www.amazon.jobs/en/jobs/${jobId}`;
+      const postedDate = j.posted_date || null;
+
+      return {
+        jobId: sha256(`amazon_${jobId}_${title}`),
+        title,
+        location,
+        experience: j.basic_qualifications ? j.basic_qualifications.substring(0, 100) : 'Not specified',
+        employmentType: j.schedule_type_id || 'Full-time',
+        description: j.description ? j.description.substring(0, 200) : title,
+        applyLink,
+        postedDate,
+      };
+    });
+
+    logger.info(`[ScrapingAgent] ✅ Amazon API extracted ${jobs.length} direct job(s)`);
+    return jobs;
+  } catch (err) {
+    logger.warn(`[ScrapingAgent] Amazon API fetch failed: ${err.message}`);
+    return [];
+  }
+};
 
 /**
  * Scrape all job listings from a company's careers page.
- * Uses the cheapest available method first.
+ * Uses ATS-based parsers first (0 AI tokens), falling back to AI only when necessary.
  *
  * @param {string} company     – Display name e.g. "Google"
  * @param {string} careersUrl  – Official careers page URL
@@ -444,15 +483,6 @@ const fetchMicrosoftApiJobs = async () => {
 const scrape = async (company, careersUrl) => {
   logger.info(`[ScrapingAgent] Starting scrape: ${company} → ${careersUrl}`);
   await sleep(POLITE_DELAY_MS);
-
-  // ── Specialized Fast API Path for Microsoft ───────────────
-  const isMicrosoft = company.toLowerCase().includes('microsoft') || careersUrl.includes('microsoft.com');
-  if (isMicrosoft) {
-    const msJobs = await fetchMicrosoftApiJobs();
-    if (msJobs.length > 0) {
-      return deduplicateJobs(msJobs);
-    }
-  }
 
   let html;
   let usedPuppeteer = false;
@@ -467,42 +497,31 @@ const scrape = async (company, careersUrl) => {
     usedPuppeteer = true;
   }
 
-  // ── Phase 1: JSON-LD (0 tokens) ───────────────────────────
-  const jsonLdJobs = extractFromJsonLd(html, careersUrl);
-  if (jsonLdJobs.length > 0) {
-    logger.info(`[ScrapingAgent] ✅ Phase 1 (JSON-LD) succeeded: ${jsonLdJobs.length} job(s)`);
-    return deduplicateJobs(jsonLdJobs);
+  // ── Parse via Detected ATS Parser ─────────────────────────
+  const { jobs, ats, parserName } = await parseJobs(html, careersUrl);
+  if (jobs.length > 0) {
+    logger.info(`[ScrapingAgent] ✅ ${parserName} extracted ${jobs.length} job(s)`);
+    return deduplicateJobs(jobs);
   }
-  logger.info('[ScrapingAgent] Phase 1 (JSON-LD) returned 0 jobs. Trying Phase 2 (CSS selectors)...');
 
-  // ── Phase 2: CSS Selectors (0 tokens) ─────────────────────
-  const selectorJobs = extractFromSelectors(html, careersUrl);
-  if (selectorJobs.length > 0) {
-    logger.info(`[ScrapingAgent] ✅ Phase 2 (CSS selectors) succeeded: ${selectorJobs.length} job(s)`);
-    return deduplicateJobs(selectorJobs);
-  }
-  logger.info('[ScrapingAgent] Phase 2 (CSS selectors) returned 0 jobs. Falling back to Puppeteer + AI...');
-
-  // ── Puppeteer if not already used ─────────────────────────
+  // ── Puppeteer retry if static Axios failed to render ────────
   if (!usedPuppeteer) {
-    html = await fetchWithPuppeteer(careersUrl);
-
-    // Re-try JSON-LD and selectors with Puppeteer-rendered HTML
-    const jsonLdRetry = extractFromJsonLd(html, careersUrl);
-    if (jsonLdRetry.length > 0) {
-      logger.info(`[ScrapingAgent] ✅ Phase 1 (JSON-LD + Puppeteer) succeeded: ${jsonLdRetry.length} job(s)`);
-      return deduplicateJobs(jsonLdRetry);
-    }
-
-    const selectorRetry = extractFromSelectors(html, careersUrl);
-    if (selectorRetry.length > 0) {
-      logger.info(`[ScrapingAgent] ✅ Phase 2 (CSS + Puppeteer) succeeded: ${selectorRetry.length} job(s)`);
-      return deduplicateJobs(selectorRetry);
+    logger.info(`[ScrapingAgent] 0 jobs with static HTML. Retrying with Puppeteer...`);
+    try {
+      html = await fetchWithPuppeteer(careersUrl);
+      usedPuppeteer = true;
+      const retryResult = await parseJobs(html, careersUrl);
+      if (retryResult.jobs.length > 0) {
+        logger.info(`[ScrapingAgent] ✅ ${retryResult.parserName} (via Puppeteer) extracted ${retryResult.jobs.length} job(s)`);
+        return deduplicateJobs(retryResult.jobs);
+      }
+    } catch (err) {
+      logger.warn(`[ScrapingAgent] Puppeteer retry failed: ${err.message}`);
     }
   }
 
-  // ── Phase 3: AI Fallback (minimal tokens) ─────────────────
-  logger.info('[ScrapingAgent] Phase 3 (AI fallback) activated...');
+  // ── Phase 3: AI Fallback (Only when no ATS parser succeeds) ─
+  logger.info(`[ScrapingAgent] All ATS parsers returned 0 jobs. Activating AI fallback...`);
   const pageText = extractJobCardsText(html, careersUrl);
   const aiJobs = await parseWithAI(pageText, company, careersUrl);
   return deduplicateJobs(aiJobs);

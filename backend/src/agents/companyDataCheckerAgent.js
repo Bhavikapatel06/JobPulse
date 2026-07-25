@@ -15,6 +15,8 @@
 const CompanyJob = require('../models/CompanyJob');
 const searchAgent = require('./searchAgent');
 const scrapingAgent = require('./scrapingAgent');
+const verifierAgent = require('./verifierAgent');
+const agnoClient = require('../services/agnoClient');
 const { isOlderThan } = require('../utils/timeUtils');
 const logger = require('../config/logger');
 
@@ -80,8 +82,9 @@ const check = async (companyName) => {
   inFlight.add(key);
 
   try {
-    // ── 4a. Find careers URL (cached in DB) ──────────────────
-    const careersUrl = await searchAgent.findCareersUrl(companyName);
+    // ── 4a. Find careers URL (force refresh if previous scrape yielded 0 jobs or failed)
+    const forceRefresh = !record || record.scrapeStatus === 'failed' || (!record.jobs?.length);
+    const careersUrl = await searchAgent.findCareersUrl(companyName, forceRefresh);
     logger.info(`[DataCheckerAgent] Careers URL: ${careersUrl}`);
 
     // ── 4b. Mark as pending ───────────────────────────────────
@@ -91,8 +94,13 @@ const check = async (companyName) => {
       { upsert: true }
     );
 
-    // ── 4c. Scrape jobs ───────────────────────────────────────
-    const jobs = await scrapingAgent.scrape(companyName, careersUrl);
+    // ── 4c. Scrape & Verify jobs ──────────────────────────────
+    const rawJobs = await scrapingAgent.scrape(companyName, careersUrl);
+
+    // Try Agno VerifierAgent first (rule-based, 0 tokens).
+    // Falls back to JS verifierAgent automatically if Agno is unavailable.
+    const agnoVerified = await agnoClient.verify(rawJobs, companyName, careersUrl);
+    const jobs = agnoVerified ?? verifierAgent.verifyAll(rawJobs, companyName, careersUrl);
 
     // ── 4d. Persist to DB ─────────────────────────────────────
     record = await CompanyJob.findOneAndUpdate(
