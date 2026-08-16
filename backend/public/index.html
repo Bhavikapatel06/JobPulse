@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JobPulse — AI Job Tracking Dashboard</title>
+  <meta name="description" content="JobPulse: AI-powered automated job tracking, scraping, and alerts for your target companies." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>" />
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ── Top Navbar ───────────────────────────────────────── -->
+  <nav class="sidebar" id="sidebar">
+
+    <!-- Brand -->
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-icon">⚡</div>
+      <div class="sidebar-logo-text">Job<span>Pulse</span></div>
+    </div>
+
+    <!-- Nav links (horizontal) -->
+    <div class="sidebar-nav">
+      <button class="nav-item active" data-page="dashboard" id="nav-dashboard">
+        <span class="nav-icon">◈</span> Dashboard
+      </button>
+      <button class="nav-item" data-page="users" id="nav-users">
+        <span class="nav-icon">👤</span> Users
+      </button>
+      <button class="nav-item" data-page="jobs" id="nav-jobs">
+        <span class="nav-icon">🏢</span> Companies & Jobs
+      </button>
+      <button class="nav-item" data-page="portal" id="nav-portal">
+        <span class="nav-icon">⚡</span> My Jobs
+      </button>
+    </div>
+
+    <!-- Right: status + clock + add user -->
+    <div class="sidebar-footer">
+      <div class="status-indicator">
+        <div class="status-dot" id="api-status-dot"></div>
+        <span id="api-status-text" style="font-size:11px">Connecting…</span>
+      </div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.55);font-weight:500;font-variant-numeric:tabular-nums" id="live-clock"></div>
+      <button class="btn btn-accent btn-sm" id="btn-add-user">+ Add User</button>
+    </div>
+  </nav>
+
+  <!-- ── Main Content ─────────────────────────────────────── -->
+  <div class="main-content">
+
+    <!-- Page title bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-title" id="topbar-title">Dashboard</div>
+        <div class="topbar-subtitle" id="topbar-subtitle">Real-time job tracking overview</div>
+      </div>
+      <div class="topbar-right">
+      </div>
+    </header>
+
+
+    <!-- Page Content -->
+    <main class="page-content">
+
+      <!-- ── Dashboard Page ─────────────────────────────── -->
+      <section class="page active" id="page-dashboard">
+        <!-- Stats -->
+        <div class="stats-grid" id="stats-grid">
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">Active Users</div>
+              <div class="stat-value skeleton skeleton-stat" id="stat-users">—</div>
+              <div class="stat-meta" id="stat-users-meta">Loading…</div>
+            </div>
+            <div class="stat-icon navy">👤</div>
+          </div>
+          <div class="stat-card accent-border">
+            <div class="stat-info">
+              <div class="stat-label">Companies Tracked</div>
+              <div class="stat-value skeleton skeleton-stat" id="stat-companies">—</div>
+              <div class="stat-meta" id="stat-companies-meta">Loading…</div>
+            </div>
+            <div class="stat-icon cyan">🏢</div>
+          </div>
+          <div class="stat-card success-border">
+            <div class="stat-info">
+              <div class="stat-label">Jobs Cached</div>
+              <div class="stat-value skeleton skeleton-stat" id="stat-jobs">—</div>
+              <div class="stat-meta" id="stat-jobs-meta">Loading…</div>
+            </div>
+            <div class="stat-icon green">✅</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-info">
+              <div class="stat-label">API Status</div>
+              <div class="stat-value" id="stat-api" style="font-size:18px">—</div>
+              <div class="stat-meta" id="stat-api-meta">Checking…</div>
+            </div>
+            <div class="stat-icon amber">⚡</div>
+          </div>
+        </div>
+
+        <!-- Two-col: Recent Users + Activity Feed -->
+        <div class="two-col">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Recent Users</div>
+              <button class="btn btn-ghost btn-sm" id="dash-view-all-users">View All →</button>
+            </div>
+            <div class="card-body">
+              <ul class="user-list" id="dash-user-list">
+                <li class="user-item"><div class="skeleton skeleton-text" style="height:40px;width:100%"></div></li>
+                <li class="user-item"><div class="skeleton skeleton-text" style="height:40px;width:100%"></div></li>
+                <li class="user-item"><div class="skeleton skeleton-text" style="height:40px;width:100%"></div></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span class="badge badge-cyan" style="margin-right:6px">⚡ AI</span>
+                Automation Feed
+              </div>
+              <button class="btn btn-ghost btn-sm" id="dash-refresh-feed">↺ Refresh</button>
+            </div>
+            <div class="card-body">
+              <ul class="activity-list" id="activity-feed">
+                <li class="activity-item">
+                  <div class="activity-dot cyan"></div>
+                  <div class="activity-content">
+                    <div class="activity-msg">Dashboard loaded</div>
+                    <div class="activity-time">just now</div>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Users Page ──────────────────────────────────── -->
+      <section class="page" id="page-users">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Users</div>
+            <div class="section-sub">Manage job tracking profiles and notification schedules</div>
+          </div>
+          <div class="flex gap-2 items-center">
+            <span id="users-count-badge"></span>
+            <button class="btn btn-primary" id="btn-add-user-2">+ Add User</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-body">
+            <ul class="user-list" id="users-full-list">
+              <li class="user-item"><div class="skeleton skeleton-text" style="height:50px;width:100%"></div></li>
+              <li class="user-item"><div class="skeleton skeleton-text" style="height:50px;width:100%"></div></li>
+              <li class="user-item"><div class="skeleton skeleton-text" style="height:50px;width:100%"></div></li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Companies & Jobs Page ───────────────────────── -->
+      <section class="page" id="page-jobs">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Companies & Jobs</div>
+            <div class="section-sub">Cached job listings from automated scraping runs</div>
+          </div>
+          <div class="flex gap-2 items-center">
+            <span id="jobs-count-badge"></span>
+            <button class="btn btn-ghost btn-sm" id="btn-refresh-all">↺ Refresh All</button>
+          </div>
+        </div>
+        <div id="jobs-accordion">
+          <div class="skeleton" style="height:70px;border-radius:12px;margin-bottom:12px"></div>
+          <div class="skeleton" style="height:70px;border-radius:12px;margin-bottom:12px"></div>
+          <div class="skeleton" style="height:70px;border-radius:12px"></div>
+        </div>
+      </section>
+
+      <!-- ── My Jobs (User Portal) Page ─────────────────── -->
+      <section class="page" id="page-portal">
+
+        <!-- State: Email lookup (default) -->
+        <div id="portal-lookup">
+          <div class="portal-hero">
+            <div class="portal-hero-inner">
+              <div class="portal-hero-icon">⚡</div>
+              <h1 class="portal-hero-title">Your Job Feed</h1>
+              <p class="portal-hero-sub">Enter your email to see jobs matched to your profile in real-time</p>
+              <div class="portal-search-bar">
+                <input
+                  class="portal-search-input"
+                  type="email"
+                  id="portal-email-input"
+                  placeholder="your@email.com"
+                  autocomplete="email"
+                />
+                <button class="btn btn-primary" id="portal-search-btn">Find My Jobs →</button>
+              </div>
+              <div class="portal-search-hint" id="portal-search-hint"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- State: Results (hidden until lookup) -->
+        <div id="portal-results" style="display:none">
+
+          <!-- Profile strip -->
+          <div class="portal-profile-strip" id="portal-profile-strip">
+            <div class="portal-profile-avatar" id="portal-avatar">?</div>
+            <div class="portal-profile-info">
+              <div class="portal-profile-name" id="portal-name">—</div>
+              <div class="portal-profile-meta" id="portal-meta">—</div>
+            </div>
+            <div class="portal-profile-actions">
+              <div id="portal-pipeline-badge" class="pipeline-badge" style="display:none">
+                <span class="spinner"></span> Running pipeline…
+              </div>
+              <button class="btn btn-accent" id="portal-trigger-btn">▶ Trigger Report</button>
+              <button class="btn btn-ghost btn-sm" id="portal-refresh-btn">↺ Refresh</button>
+              <button class="btn btn-ghost btn-sm" id="portal-back-btn">← Back</button>
+            </div>
+          </div>
+
+          <!-- Summary bar -->
+          <div class="portal-summary-bar" id="portal-summary-bar"></div>
+
+          <!-- Matched jobs accordion -->
+          <div id="portal-jobs-list"></div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ── Overlay ──────────────────────────────────────────────── -->
+<div class="overlay" id="overlay"></div>
+
+<!-- ── Add/Edit User Drawer ─────────────────────────────────── -->
+<aside class="drawer" id="user-drawer">
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title" id="drawer-title">Add User</div>
+      <div class="drawer-subtitle" id="drawer-subtitle">Fill in the details to create a job tracking profile</div>
+    </div>
+    <button class="drawer-close" id="drawer-close">✕</button>
+  </div>
+  <div class="drawer-body">
+    <form id="user-form" autocomplete="off">
+      <input type="hidden" id="user-id" />
+      <div class="form-group">
+        <label class="form-label" for="field-name">Full Name <span>*</span></label>
+        <input class="form-input" type="text" id="field-name" placeholder="e.g. Alice Johnson" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="field-email">Email <span>*</span></label>
+        <input class="form-input" type="email" id="field-email" placeholder="alice@example.com" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="field-role">Desired Role <span>*</span></label>
+        <input class="form-input" type="text" id="field-role" placeholder="e.g. Backend Engineer" required />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="field-companies">Companies to Track <span>*</span></label>
+        <input class="form-input" type="text" id="field-companies" placeholder="Google, Microsoft, Stripe" required />
+        <div class="form-hint">Comma-separated list of company names</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="field-location">Location Filter</label>
+          <input class="form-input" type="text" id="field-location" placeholder="e.g. Remote" />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="field-exp">Experience Level</label>
+          <select class="form-select" id="field-exp">
+            <option value="">Any</option>
+            <option value="Junior">Junior</option>
+            <option value="Mid-level">Mid-level</option>
+            <option value="Senior">Senior</option>
+            <option value="Lead">Lead</option>
+            <option value="Staff">Staff</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="field-notify">Daily Alert Time (24-hr) <span>*</span></label>
+        <input class="form-input" type="time" id="field-notify" value="09:00" required />
+        <div class="form-hint">The scheduler runs every minute and sends reports at your specified time</div>
+      </div>
+    </form>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn btn-ghost" id="drawer-cancel">Cancel</button>
+    <button class="btn btn-primary" id="drawer-save" type="submit">
+      <span id="drawer-save-text">Create User</span>
+    </button>
+  </div>
+</aside>
+
+<!-- ── Confirm Dialog ────────────────────────────────────────── -->
+<div class="overlay" id="confirm-overlay"></div>
+<div class="confirm-dialog" id="confirm-dialog">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirm-icon">⚠️</div>
+    <div class="confirm-title" id="confirm-title">Are you sure?</div>
+    <div class="confirm-msg" id="confirm-msg">This action cannot be undone.</div>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" id="confirm-cancel">Cancel</button>
+      <button class="btn btn-danger-ghost" id="confirm-ok">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast Container ───────────────────────────────────────── -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

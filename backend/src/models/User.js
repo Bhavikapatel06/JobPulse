@@ -37,6 +37,16 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
+    // Optional per-company configuration (role, alert time)
+    companyConfigs: [
+      {
+        company: { type: String, required: true, trim: true },
+        role: { type: String, required: true, trim: true },
+        notifyTime: { type: String, default: '09:00', trim: true },
+        active: { type: Boolean, default: true },
+      },
+    ],
+
     // Optional filters
     filters: {
       location: { type: String, trim: true, default: null },
@@ -55,6 +65,14 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Role controls UI access: 'admin' sees full dashboard, 'user' sees only My Jobs
+    role: {
+      type: String,
+      enum: ['admin', 'user'],
+      default: 'user',
+    },
+
   },
   {
     timestamps: true, // adds createdAt & updatedAt automatically

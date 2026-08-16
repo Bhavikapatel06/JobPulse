@@ -13,19 +13,24 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const connectDB = require('./src/config/db');
 const logger = require('./src/config/logger');
 const userRoutes = require('./src/routes/userRoutes');
-const jobRoutes = require('./src/routes/jobRoutes');
+const jobRoutes  = require('./src/routes/jobRoutes');
+const authRoutes = require('./src/routes/authRoutes');
 const schedulerAgent = require('./src/agents/schedulerAgent');
 
-const app = express();
+const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ─── Middleware ───────────────────────────────────────────────
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// ─── Static Dashboard UI ──────────────────────────────────────
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Request logger (brief)
 app.use((req, _res, next) => {
@@ -34,8 +39,10 @@ app.use((req, _res, next) => {
 });
 
 // ─── Routes ──────────────────────────────────────────────────
+app.use('/api/auth',  authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/jobs', jobRoutes);
+app.use('/api/jobs',  jobRoutes);
+
 
 // Health check
 app.get('/health', (_req, res) => {
