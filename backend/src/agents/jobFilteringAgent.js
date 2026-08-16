@@ -22,7 +22,22 @@ const logger = require('../config/logger');
  * @returns {object[]}       – Matched jobs (plain objects)
  */
 const filter = (jobs, user, company) => {
-  const { desiredRole, filters } = user;
+  let targetRole = user.desiredRole;
+  const { filters, companyConfigs } = user;
+
+  // Check if user has a custom role configured for this company
+  if (Array.isArray(companyConfigs) && companyConfigs.length > 0) {
+    const custom = companyConfigs.find(
+      (c) =>
+        c.company &&
+        (c.company.toLowerCase() === company.toLowerCase() ||
+          company.toLowerCase().includes(c.company.toLowerCase()) ||
+          c.company.toLowerCase().includes(company.toLowerCase()))
+    );
+    if (custom && custom.role) {
+      targetRole = custom.role;
+    }
+  }
 
   if (!Array.isArray(jobs) || jobs.length === 0) {
     logger.info(`[FilteringAgent] No jobs to filter for ${company}`);
@@ -31,7 +46,7 @@ const filter = (jobs, user, company) => {
 
   const matched = jobs.filter((job) => {
     // ── Role match (mandatory) ──────────────────────────────
-    if (!fuzzyMatch(job.title, desiredRole)) return false;
+    if (!fuzzyMatch(job.title, targetRole)) return false;
 
     // ── Location match (optional) ───────────────────────────
     if (filters?.location && filters.location.trim()) {
@@ -48,7 +63,7 @@ const filter = (jobs, user, company) => {
 
   logger.info(
     `[FilteringAgent] ${company}: ${matched.length}/${jobs.length} jobs match ` +
-    `"${desiredRole}"` +
+    `"${targetRole}"` +
     (filters?.location ? ` in "${filters.location}"` : '') +
     (filters?.experienceLevel ? ` (${filters.experienceLevel})` : '')
   );

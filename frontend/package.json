@@ -1,0 +1,18 @@
+{
+  "name": "jobpulse-frontend",
+  "version": "1.0.0",
+  "description": "JobPulse — Role-based frontend (Admin + User portal)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vite": "^5.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true
+  }
+}

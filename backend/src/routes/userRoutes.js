@@ -19,6 +19,14 @@ const logger = require('../config/logger');
 
 router.post('/', async (req, res) => {
   try {
+    if (Array.isArray(req.body.companyConfigs) && req.body.companyConfigs.length > 0) {
+      if (!req.body.companies || req.body.companies.length === 0) {
+        req.body.companies = req.body.companyConfigs.map(c => c.company);
+      }
+      if (!req.body.desiredRole && req.body.companyConfigs[0]?.role) {
+        req.body.desiredRole = req.body.companyConfigs[0].role;
+      }
+    }
     const user = await userPreferenceAgent.createUser(req.body);
     res.status(201).json({
       success: true,
@@ -68,6 +76,12 @@ router.get('/:id', async (req, res) => {
 
 router.put('/:id', async (req, res) => {
   try {
+    if (Array.isArray(req.body.companyConfigs) && req.body.companyConfigs.length > 0) {
+      req.body.companies = req.body.companyConfigs.map(c => c.company);
+      if (!req.body.desiredRole && req.body.companyConfigs[0]?.role) {
+        req.body.desiredRole = req.body.companyConfigs[0].role;
+      }
+    }
     const user = await userPreferenceAgent.updateUser(req.params.id, req.body);
     if (!user) {
       return res.status(404).json({ success: false, error: 'User not found' });
@@ -124,4 +138,96 @@ router.post('/:id/trigger', async (req, res) => {
   }
 });
 
+// ── GET /api/users/:id/jobs ──────────────────────────────────
+// Returns filtered jobs for this user from the cached CompanyJobs collection.
+// Uses jobFilteringAgent — no scraping triggered, reads DB only.
+
+router.get('/:id/jobs', async (req, res) => {
+  try {
+    const user = await userPreferenceAgent.getUserById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const CompanyJob = require('../models/CompanyJob');
+    const jobFilteringAgent = require('../agents/jobFilteringAgent');
+
+    const results = [];
+    let totalJobs = 0;
+
+    for (const companyName of user.companies) {
+      const key = companyName.trim().toLowerCase();
+      const record = await CompanyJob.findOne({ company: key });
+
+      if (!record || !record.jobs?.length) {
+        results.push({
+          company: companyName,
+          companyKey: key,
+          careersUrl: record?.careersUrl || null,
+          scrapeStatus: record?.scrapeStatus || 'pending',
+          lastUpdated: record?.lastUpdated || null,
+          jobCount: 0,
+          matchedCount: 0,
+          jobs: [],
+        });
+        continue;
+      }
+
+      const plainJobs = record.toObject ? record.toObject().jobs : record.jobs;
+      const matched = jobFilteringAgent.filter(plainJobs, user, companyName);
+
+      const tagged = matched.map((job) => ({
+        company: record.companyDisplayName || companyName,
+        title: job.title || 'Untitled Position',
+        location: job.location || 'Not specified',
+        experience: job.experience || 'Not specified',
+        employmentType: job.employmentType || 'Not specified',
+        description: job.description || '',
+        applyLink: job.applyLink || '',
+        postedDate: job.postedDate || null,
+        jobId: job.jobId || null,
+      }));
+
+      totalJobs += tagged.length;
+
+      results.push({
+        company: record.companyDisplayName || companyName,
+        companyKey: key,
+        careersUrl: record.careersUrl || null,
+        scrapeStatus: record.scrapeStatus,
+        lastUpdated: record.lastUpdated,
+        jobCount: plainJobs.length,
+        matchedCount: tagged.length,
+        jobs: tagged,
+      });
+    }
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        desiredRole: user.desiredRole,
+        companies: user.companies,
+        companyConfigs: user.companyConfigs || [],
+        filters: user.filters,
+        notifyTime: user.notifyTime,
+        active: user.active,
+      },
+      summary: {
+        totalMatched: totalJobs,
+        companiesScanned: results.length,
+        companiesWithMatches: results.filter((r) => r.matchedCount > 0).length,
+      },
+      results,
+    });
+
+  } catch (err) {
+    logger.error(`[UserRoutes] GET /api/users/${req.params.id}/jobs: ${err.message}`);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
+
